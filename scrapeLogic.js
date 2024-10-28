@@ -4,160 +4,117 @@ require("dotenv").config();
 const proxyUsername = 'msnmmayl';
 const proxyPassword = '626he4yucyln';
 
-const initializeBrowser = async (proxyUrl) => {
-  try {
-    const proxyUrlObj = new URL(proxyUrl);
-    // Format proxy URL without protocol since we'll handle that in args
-    const formattedProxy = `${proxyUrlObj.hostname}:${proxyUrlObj.port}`;
+let browser; // Singleton browser instance
 
-    const browser = await puppeteer.launch({
+const initializeBrowser = async (proxy) => {
+  if (!browser) {
+    // Parse and format proxy URL properly
+    const proxyUrl = new URL(proxy);
+    const formattedProxy = `${proxyUrl.hostname}:${proxyUrl.port}`;
+
+    browser = await puppeteer.launch({
       headless: true,
       args: [
         `--proxy-server=${formattedProxy}`,
         '--disable-images',
         '--disable-media',
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
         '--ignore-certificate-errors',
-        '--ignore-certificate-errors-spki-list',
-        '--disable-features=IsolateOrigins',
-        '--disable-site-isolation-trials',
-        '--disable-web-security',
-        // Force specific TLS versions
-        '--ssl-version-min=tls1',
-        '--ssl-version-max=tls1.3'
+        '--no-sandbox',
+        '--disable-setuid-sandbox'
       ],
-      executablePath: process.env.NODE_ENV === "production"
-        ? process.env.PUPPETEER_EXECUTABLE_PATH
-        : puppeteer.executablePath(),
+      executablePath:
+        process.env.NODE_ENV === "production"
+          ? process.env.PUPPETEER_EXECUTABLE_PATH
+          : puppeteer.executablePath(),
       ignoreHTTPSErrors: true
     });
-    
-    return browser;
-  } catch (error) {
-    console.error('Browser initialization failed:', error);
-    throw error;
+    console.log('Browser initialized');
   }
+  console.log('Browser initialized2');
+  return browser;
 };
 
-const scrapeLogic = async (res, url, cookieValue, proxyUrl) => {
-  let browser = null;
-  let page = null;
-
+const scrapeLogic = async (res, url, cookieValue, proxy) => {
   try {
-    browser = await initializeBrowser(proxyUrl);
-    page = await browser.newPage();
-
-    // Enable verbose logging
-    page.on('error', err => console.error('Page error:', err));
-    page.on('requestfailed', request => {
-      console.log('Request failed:', {
-        url: request.url(),
-        errorText: request.failure().errorText
-      });
-    });
-
-    // Configure page settings
+    const browser = await initializeBrowser(proxy);
+    const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
-    await page.setDefaultNavigationTimeout(60000);
 
-    // Set up authentication before any navigation
+    // Authenticate proxy BEFORE setting request interception
     await page.authenticate({
       username: proxyUsername,
-      password: proxyPassword
-    });
-
-    // Disable specific security features that might interfere with proxy
-    await page.setExtraHTTPHeaders({
-      'Accept-Language': 'en-US,en;q=0.9',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      password: proxyPassword,
     });
 
     // Set up request interception
     await page.setRequestInterception(true);
+    
+    let intercepted = false; // Define intercepted variable
 
-    let intercepted = false;
     page.on('request', request => {
-      if (['image', 'stylesheet', 'font', 'media'].includes(request.resourceType())) {
+      if (['image', 'media'].includes(request.resourceType())) {
         request.abort();
       } else if (request.url().includes('envatousercontent.com')) {
-        intercepted = true;
+        intercepted = true; // Mark interception as done
         console.log('Intercepted request URL:', request.url());
         res.send(request.url());
         request.abort();
+        return;
       } else {
-        const headers = request.headers();
-        headers['Connection'] = 'keep-alive';
-        request.continue({ headers });
+        request.continue();
       }
     });
 
+    console.log('Page loaded1');
     // Set cookies
     await page.setCookie({
-      name: '_elements_session_4',
-      value: cookieValue,
-      domain: '.elements.envato.com'
+      name: '_elements_session_4', // Hardcoded cookie name
+      value: cookieValue, // Dynamic cookie value from query parameter
+      domain: '.elements.envato.com', // Adjust the domain to match the target site
     });
 
-    console.log('Navigating to URL:', url);
-    await page.goto(url, {
-      waitUntil: 'networkidle2',
-      timeout: 60000
-    });
+    console.log('Page loaded2');
+    await page.goto(url, { waitUntil: 'networkidle2' });
+    console.log('Page loaded');
 
-    // Rest of your scraping logic...
-    console.log('Page loaded successfully');
-
-    // Handle cookie consent
+    // Rest of your code remains exactly the same...
     try {
-      await page.waitForFunction(
-        () => Array.from(document.querySelectorAll('button, a'))
+      await page.waitForFunction(() =>
+        Array.from(document.querySelectorAll('button, a'))
           .some(el => el.textContent.trim() === 'Accept all'),
-        { timeout: 5000 }
+        { timeout: 5000 } // Adjust timeout as needed
       );
       await page.evaluate(() => {
         const button = Array.from(document.querySelectorAll('button, a'))
           .find(el => el.textContent.trim() === 'Accept all');
-        if (button) button.click();
+        if (button) {
+          button.click();
+        }
       });
+      console.log('"Accept all" button clicked');
     } catch (e) {
-      console.log('No cookie consent dialog found');
+      console.log('"Accept all" button not found, continuing');
     }
 
-    // Wait for and extract text
-    await page.waitForSelector('.woNBXVXX', { timeout: 10000 });
-    const text = await page.evaluate(() => 
-      document.querySelector('.woNBXVXX').innerText
-    );
-    console.log('Extracted text:', text);
-
-    // Handle escape keys and button clicks
+    await page.waitForSelector('.woNBXVXX');
+    const text = await page.evaluate(() => {
+      return document.querySelector('.woNBXVXX').innerText;
+    });
+    console.log('Extracted Text:', text);
     await page.keyboard.press('Escape');
     await page.keyboard.press('Escape');
     await page.click('.ncWzoxCr.WjwUaJcT.NWg5MVVe.METNYJBx');
-    
+    console.log('Button clicked!');
     await page.waitForSelector('[data-testid="download-without-license-button"]');
     await page.click('[data-testid="download-without-license-button"]');
-
-    if (!intercepted) {
-      throw new Error('Failed to intercept download URL');
-    }
-
-  } catch (error) {
-    console.error('Detailed error:', {
-      message: error.message,
-      stack: error.stack,
-      name: error.name
-    });
-    res.status(500).send({
-      error: 'Scraping failed',
-      details: error.message,
-      stack: error.stack
-    });
+    console.log('Download button clicked');
+    console.log('Task completed successfully');
+  } catch (e) {
+    console.error(e);
+    res.send(`Something went wrong while running : ${e}`);
   } finally {
-    if (page) await page.close();
-    if (browser) await browser.close();
+    // Optionally close the browser if needed, but keeping it open for speed
+    // await browser.close();
   }
 };
 
