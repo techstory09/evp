@@ -34,9 +34,11 @@ const initializeBrowser = async (proxy) => {
 
 const scrapeLogic = async (res, url, cookieValue, proxy) => {
   let responseSent = false; // Track if response was sent
+  let page; // Declare page at the start
+
   try {
     const browser = await initializeBrowser(proxy);
-    const page = await browser.newPage();
+    page = await browser.newPage(); // Initialize page here
     await page.setViewport({ width: 1280, height: 800 });
 
     // Authenticate proxy BEFORE setting request interception
@@ -117,7 +119,9 @@ const scrapeLogic = async (res, url, cookieValue, proxy) => {
       res.send(`Something went wrong while running : ${e}`);
     }
   } finally {
-    await page.close(); // Close the page to avoid interference with other instances
+    if (page) {
+      await page.close(); // Close the page if it was initialized
+    }
   }
 };
 
