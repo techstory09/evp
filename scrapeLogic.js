@@ -54,12 +54,14 @@ const scrapeLogic = async (res, url, cookieValue, proxy) => {
     page.on('request', request => {
       if (['image', 'media'].includes(request.resourceType())) {
         request.abort();
-      } else if (request.url().includes('envatousercontent.com')) {
+      } else if (request.url().includes('preview.mp3'){
+         request.continue();
+      }else if (request.url().includes('envatousercontent.com')) {
         intercepted = true; // Mark interception as done
         console.log('Intercepted request URL:', request.url());
         res.send(request.url());
-        return;
         request.abort();
+        return;
        
       } else {
         request.continue();
