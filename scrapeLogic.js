@@ -58,8 +58,9 @@ const scrapeLogic = async (res, url, cookieValue, proxy) => {
         intercepted = true; // Mark interception as done
         console.log('Intercepted request URL:', request.url());
         res.send(request.url());
-        request.abort();
         return;
+        request.abort();
+       
       } else {
         request.continue();
       }
