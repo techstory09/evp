@@ -8,7 +8,6 @@ let browser; // Singleton browser instance
 
 const initializeBrowser = async (proxy) => {
   if (!browser) {
-    // Parse and format proxy URL properly
     const proxyUrl = new URL(proxy);
     const formattedProxy = `${proxyUrl.hostname}:${proxyUrl.port}`;
 
@@ -30,11 +29,11 @@ const initializeBrowser = async (proxy) => {
     });
     console.log('Browser initialized');
   }
-  console.log('Browser initialized2');
   return browser;
 };
 
 const scrapeLogic = async (res, url, cookieValue, proxy) => {
+  let responseSent = false; // Track if response was sent
   try {
     const browser = await initializeBrowser(proxy);
     const page = await browser.newPage();
@@ -48,18 +47,15 @@ const scrapeLogic = async (res, url, cookieValue, proxy) => {
 
     // Set up request interception
     await page.setRequestInterception(true);
-    
-    let intercepted = false; // Define intercepted variable
 
     page.on('request', request => {
       if (['image', 'media'].includes(request.resourceType())) {
         request.abort();
-      } else if (request.url().includes('envatousercontent.com')) {
-        intercepted = true; // Mark interception as done
+      } else if (request.url().includes('envatousercontent.com') && !responseSent) {
+        responseSent = true; // Mark response as sent
         console.log('Intercepted request URL:', request.url());
         res.send(request.url());
         request.abort();
-        return;
       } else {
         request.continue();
       }
@@ -68,21 +64,20 @@ const scrapeLogic = async (res, url, cookieValue, proxy) => {
     console.log('Page loaded1');
     // Set cookies
     await page.setCookie({
-      name: '_elements_session_4', // Hardcoded cookie name
-      value: cookieValue, // Dynamic cookie value from query parameter
-      domain: '.elements.envato.com', // Adjust the domain to match the target site
+      name: '_elements_session_4', 
+      value: cookieValue, 
+      domain: '.elements.envato.com', 
     });
 
     console.log('Page loaded2');
     await page.goto(url, { waitUntil: 'networkidle2' });
     console.log('Page loaded');
 
-    // Rest of your code remains exactly the same...
     try {
       await page.waitForFunction(() =>
         Array.from(document.querySelectorAll('button, a'))
           .some(el => el.textContent.trim() === 'Accept all'),
-        { timeout: 5000 } // Adjust timeout as needed
+        { timeout: 5000 }
       );
       await page.evaluate(() => {
         const button = Array.from(document.querySelectorAll('button, a'))
@@ -109,12 +104,20 @@ const scrapeLogic = async (res, url, cookieValue, proxy) => {
     await page.click('[data-testid="download-without-license-button"]');
     console.log('Download button clicked');
     console.log('Task completed successfully');
+
+    if (!responseSent) {
+      responseSent = true; // Set to true to ensure no double response
+      res.send("Task completed successfully");
+    }
+
   } catch (e) {
     console.error(e);
-    res.send(`Something went wrong while running : ${e}`);
+    if (!responseSent) {
+      responseSent = true; // Ensure error response is sent only once
+      res.send(`Something went wrong while running : ${e}`);
+    }
   } finally {
-    // Optionally close the browser if needed, but keeping it open for speed
-    // await browser.close();
+    await page.close(); // Close the page to avoid interference with other instances
   }
 };
 
